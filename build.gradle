@@ -24,7 +24,7 @@ task clean(type: Delete) {
 }
 
 ext {
-    versionNameString = '3.5.3'
+    versionNameString = '3.5.3-wyz'
     versionCode = 128
     versionCompiler = 36
     versionTarget = 36
