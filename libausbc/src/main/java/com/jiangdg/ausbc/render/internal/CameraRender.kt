@@ -35,13 +35,19 @@ class CameraRender(context: Context) : AbstractFboRender(context) {
     private var mStMatrix = FloatArray(16)
     private var mMVPMatrix = FloatArray(16)
     private var mOESTextureId: Int = -1
+    private var mAngle: Int = 0
 
     override fun init() {
         mOESTextureId = createOESTexture()
-        setMVPMatrix(0)
+        setMVPMatrix(0, getRenderWidth(), getRenderHeight())
         Matrix.setIdentityM(mStMatrix, 0)
         mStMatrixHandle = GLES20.glGetUniformLocation(mProgram, "uStMatrix")
         mMVPMatrixHandle = GLES20.glGetUniformLocation(mProgram, "uMVPMatrix")
+    }
+
+    override fun setSize(width: Int, height: Int) {
+        super.setSize(width, height)
+        setMVPMatrix(mAngle, width, height)
     }
 
     override fun beforeDraw() {
@@ -66,16 +72,52 @@ class CameraRender(context: Context) : AbstractFboRender(context) {
             RotateType.FLIP_LEFT_RIGHT -> -180
             else -> 0
         }
-        setMVPMatrix(angle)
+        mAngle = angle
+        setMVPMatrix(angle, getRenderWidth(), getRenderHeight())
     }
 
     fun setTransformMatrix(matrix: FloatArray) {
         this.mStMatrix = matrix
     }
 
-    private fun setMVPMatrix(angle: Int): FloatArray {
+    private fun setMVPMatrix(angle: Int, width: Int, height: Int): FloatArray {
         Matrix.setIdentityM(mMVPMatrix, 0)
         when (angle) {
+            90 -> {
+                if (width > 0 && height > 0) {
+                    val viewRatio = width.toFloat() / height.toFloat()
+                    val imgRatio = 16.0f / 9.0f // 假设摄像头为 16:9
+                    val rotatedRatio = 1.0f / imgRatio
+                    val zoomFactor = 1.0f
+
+                    if (rotatedRatio > viewRatio) {
+                        // 旋转后画面更宽
+                        val scale = rotatedRatio / viewRatio
+                        // 此时 scale 可能是 1.0 (如果比例匹配)
+                        // 我们同时放大 X 和 Y，保持比例，但填满屏幕
+                        Matrix.scaleM(mMVPMatrix, 0, scale * zoomFactor, 1f * zoomFactor, 1f)
+                    } else {
+                        // 旋转后画面更高
+                        val scale = viewRatio / rotatedRatio
+                        Matrix.scaleM(mMVPMatrix, 0, 1f * zoomFactor, scale * zoomFactor, 1f)
+                    }
+                }
+                Matrix.rotateM(mMVPMatrix, 0, -90f, 0f, 0f, 1f)
+            }
+            270 -> {
+                if (width > 0 && height > 0) {
+                    val viewAspect = width.toFloat() / height.toFloat()
+                    val rotatedAspect = height.toFloat() / width.toFloat()
+                    if (rotatedAspect > viewAspect) {
+                        val scaleX = rotatedAspect / viewAspect
+                        Matrix.scaleM(mMVPMatrix, 0, scaleX, 1f, 1f)
+                    } else {
+                        val scaleY = viewAspect / rotatedAspect
+                        Matrix.scaleM(mMVPMatrix, 0, 1f, scaleY, 1f)
+                    }
+                }
+                Matrix.rotateM(mMVPMatrix, 0, 90f, 0f, 0f, 1f)
+            }
             -90 -> {
                 // 上下翻转 (绕x轴180度)
                 val radius = (180 * Math.PI / 180.0).toFloat()

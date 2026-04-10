@@ -77,34 +77,28 @@ class AspectRatioTextureView: TextureView, IAspectRatio {
     }
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-        var initialWidth = MeasureSpec.getSize(widthMeasureSpec)
-        var initialHeight = MeasureSpec.getSize(heightMeasureSpec)
-        val horizontalPadding = paddingLeft - paddingRight
-        val verticalPadding = paddingTop - paddingBottom
-        initialWidth -= horizontalPadding
-        initialHeight -= verticalPadding
-        // 比较预览与TextureView(内容)纵横比
-        // 如果有变化，重新设置TextureView尺寸
-        val viewAspectRatio = initialWidth.toDouble() / initialHeight
-        val diff = mAspectRatio / viewAspectRatio - 1
-        var wMeasureSpec = widthMeasureSpec
-        var hMeasureSpec = heightMeasureSpec
-        if (mAspectRatio > 0 && abs(diff) > 0.01) {
-            // diff > 0， 按宽缩放
-            // diff < 0， 按高缩放
-            if (diff > 0) {
-                initialHeight = (initialWidth / mAspectRatio).toInt()
+        val width = MeasureSpec.getSize(widthMeasureSpec)
+        val height = MeasureSpec.getSize(heightMeasureSpec)
+
+        // 如果设置了宽高比，按比例调整尺寸
+        if (mAspectRatio > 0) {
+            // 以宽度为基准，计算正确的高度
+            val targetHeight = (width / mAspectRatio).toInt()
+
+            // 如果计算出的高度超过父容器限制，则反过来以高度为基准
+            if (targetHeight > height) {
+                val targetWidth = (height * mAspectRatio).toInt()
+                Logger.i(TAG, "AspectRatio1 = $targetWidth x $height")
+                setMeasuredDimension(targetWidth, height)
             } else {
-                initialWidth = (initialHeight * mAspectRatio).toInt()
+                setMeasuredDimension(width, targetHeight)
+                Logger.i(TAG, "AspectRatio2 = $height x $targetHeight")
             }
-            // 重新设置TextureView尺寸
-            // 注意加回padding大小
-            initialWidth += horizontalPadding
-            initialHeight += verticalPadding
-            wMeasureSpec = MeasureSpec.makeMeasureSpec(initialWidth, MeasureSpec.EXACTLY)
-            hMeasureSpec = MeasureSpec.makeMeasureSpec(initialHeight, MeasureSpec.EXACTLY)
+        } else {
+            // 没有设置比例时使用原始尺寸
+            setMeasuredDimension(width, height)
+            Logger.i(TAG, "AspectRatio3 = $width x $height")
         }
-        super.onMeasure(wMeasureSpec, hMeasureSpec)
     }
 
     companion object {

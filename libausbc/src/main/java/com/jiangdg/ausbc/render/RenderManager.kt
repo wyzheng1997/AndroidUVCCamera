@@ -468,10 +468,19 @@ class RenderManager(
         val values = ContentValues()
         values.put(MediaStore.Images.ImageColumns.TITLE, title)
         values.put(MediaStore.Images.ImageColumns.DISPLAY_NAME, displayName)
-        values.put(MediaStore.Images.ImageColumns.DATA, path)
+
+        // Don't use DATA column on Android 10+ (causes crash)
+        // values.put(MediaStore.Images.ImageColumns.DATA, path)
+
         values.put(MediaStore.Images.ImageColumns.DATE_TAKEN, date)
         values.put(MediaStore.Images.ImageColumns.WIDTH, width)
         values.put(MediaStore.Images.ImageColumns.HEIGHT, height)
+
+        // Add relative path for Android 10+
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+            values.put(MediaStore.Images.ImageColumns.RELATIVE_PATH, "DCIM/Camera")
+        }
+
         mContext.contentResolver?.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
         mMainHandler.post {
             mCaptureDataCb?.onComplete(path)
