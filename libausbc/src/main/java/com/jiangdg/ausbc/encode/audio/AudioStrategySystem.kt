@@ -105,9 +105,9 @@ class AudioStrategySystem : IAudioStrategy {
 
     companion object {
         private const val TAG = "AudioSystem"
-        private const val SAMPLE_RATE = 8000
-        private const val CHANNEL_COUNT = 1
-        private const val CHANNEL_IN_CONFIG = AudioFormat.CHANNEL_IN_MONO
+        private const val SAMPLE_RATE = 48000
+        private const val CHANNEL_COUNT = 2
+        private const val CHANNEL_IN_CONFIG = AudioFormat.CHANNEL_IN_STEREO
         private const val AUDIO_FORMAT_16BIT = AudioFormat.ENCODING_PCM_16BIT
         private const val AUDIO_RECORD_SOURCE = MediaRecorder.AudioSource.MIC
     }
