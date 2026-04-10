@@ -532,13 +532,22 @@ class MultiCameraClient(ctx: Context, callback: IDeviceConnectCallBack?) {
             }?.also { processor ->
                 mAudioProcess = processor
             }
-            // create video process
-            mContext.resources.configuration.orientation.let { orientation ->
-                orientation == Configuration.ORIENTATION_PORTRAIT
-            }.also { isPortrait ->
-                mVideoProcess =
-                    H264EncodeProcessor(previewWidth, previewHeight, isNeedGLESRender, isPortrait)
-            }
+
+            val rotate = mCameraRequest?.defaultRotateType
+
+            val (encodeW, encodeH) =
+                if (rotate == RotateType.ANGLE_90 || rotate == RotateType.ANGLE_270) {
+                    previewHeight to previewWidth
+                } else {
+                    previewWidth to previewHeight
+                }
+
+            mVideoProcess = H264EncodeProcessor(
+                encodeW,
+                encodeH,
+                isNeedGLESRender,
+                isPortrait = encodeH > encodeW
+            )
         }
 
         /**
@@ -1101,9 +1110,15 @@ class MultiCameraClient(ctx: Context, callback: IDeviceConnectCallBack?) {
                 Logger.e(TAG, "start encode failed, input surface is null")
                 return
             }
-            mCameraRequest?.apply {
-                mRenderManager?.startRenderCodec(surface, previewWidth, previewHeight)
-            }
+            val rotate = mCameraRequest?.defaultRotateType
+            val (w, h) =
+                if (rotate == RotateType.ANGLE_90 || rotate == RotateType.ANGLE_270) {
+                    mCameraRequest!!.previewHeight to mCameraRequest!!.previewWidth
+                } else {
+                    mCameraRequest!!.previewWidth to mCameraRequest!!.previewHeight
+                }
+
+            mRenderManager?.startRenderCodec(surface, w, h)
         }
 
         private fun getDefaultCameraRequest(): CameraRequest {

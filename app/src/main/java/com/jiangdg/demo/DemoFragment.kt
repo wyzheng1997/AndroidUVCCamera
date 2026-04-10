@@ -638,6 +638,7 @@ class DemoFragment : CameraFragment(), View.OnClickListener, CaptureMediaView.On
             stopPlayMic()
             return
         }
+
         startPlayMic(object : IPlayCallBack {
             override fun onBegin() {
                 mViewBinding.voiceBtn.setImageResource(R.mipmap.camera_voice_on)

@@ -926,7 +926,7 @@ abstract class CameraFragment : BaseFragment(), ICameraStateCallBack {
             .setPreviewWidth(1920)
             .setPreviewHeight(1080)
             .setRenderMode(CameraRequest.RenderMode.OPENGL)
-            .setDefaultRotateType(RotateType.ANGLE_0)
+            .setDefaultRotateType(RotateType.ANGLE_90)
             .setAudioSource(CameraRequest.AudioSource.SOURCE_SYS_MIC)
             .setPreviewFormat(CameraRequest.PreviewFormat.FORMAT_MJPEG)
             .setAspectRatioShow(true)
