@@ -116,16 +116,20 @@ class CameraRender(context: Context) : AbstractFboRender(context) {
             }
             270 -> {
                 if (width > 0 && height > 0) {
-                    val viewAspect = width.toFloat() / height.toFloat()
-                    val rotatedAspect = height.toFloat() / width.toFloat()
-                    if (rotatedAspect > viewAspect) {
-                        val scaleX = rotatedAspect / viewAspect
-                        Matrix.scaleM(mMVPMatrix, 0, scaleX, 1f, 1f)
+                    val viewRatio = width.toFloat() / height.toFloat()
+                    val imgRatio = 16.0f / 9.0f // 统一使用摄像头 16:9 比例
+                    val rotatedRatio = 1.0f / imgRatio // 旋转后比例（和90°一致）
+                    val zoomFactor = 1.0f
+
+                    if (rotatedRatio > viewRatio) {
+                        val scale = rotatedRatio / viewRatio
+                        Matrix.scaleM(mMVPMatrix, 0, scale * zoomFactor, 1f * zoomFactor, 1f)
                     } else {
-                        val scaleY = viewAspect / rotatedAspect
-                        Matrix.scaleM(mMVPMatrix, 0, 1f, scaleY, 1f)
+                        val scale = viewRatio / rotatedRatio
+                        Matrix.scaleM(mMVPMatrix, 0, 1f * zoomFactor, scale * zoomFactor, 1f)
                     }
                 }
+                // 270° 正确旋转方向：+90f
                 Matrix.rotateM(mMVPMatrix, 0, 90f, 0f, 0f, 1f)
             }
             -90 -> {
