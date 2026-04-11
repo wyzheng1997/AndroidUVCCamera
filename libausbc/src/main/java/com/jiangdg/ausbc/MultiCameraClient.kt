@@ -617,6 +617,7 @@ class MultiCameraClient(ctx: Context, callback: IDeviceConnectCallBack?) {
                 callBack?.onError("Has no audio permission")
                 return
             }
+            stopPlayMic() // 先停止，防止多次调用产生回音
             (mAudioProcess as? AACEncodeProcessor)?.playAudioStart(callBack)
         }
 
