@@ -37,6 +37,8 @@ class CameraRender(context: Context) : AbstractFboRender(context) {
     private var mOESTextureId: Int = -1
     private var mAngle: Int = 0
 
+    private var isMirror = false   // 左右镜像
+
     override fun init() {
         mOESTextureId = createOESTexture()
         setMVPMatrix(0, getRenderWidth(), getRenderHeight())
@@ -74,6 +76,14 @@ class CameraRender(context: Context) : AbstractFboRender(context) {
         }
         mAngle = angle
         setMVPMatrix(angle, getRenderWidth(), getRenderHeight())
+    }
+
+    /**
+     * 设置镜像
+     */
+    fun setMirror(enable: Boolean) {
+        this.isMirror = enable
+        setMVPMatrix(mAngle, getRenderWidth(), getRenderHeight())
     }
 
     fun setTransformMatrix(matrix: FloatArray) {
@@ -143,6 +153,12 @@ class CameraRender(context: Context) : AbstractFboRender(context) {
                 mMVPMatrix[5] *= cos(radius.toDouble()).toFloat()
             }
         }
+
+        // 处理镜像（左右）
+        if (isMirror) {
+            Matrix.scaleM(mMVPMatrix, 0, -1f, 1f, 1f)
+        }
+
         return mMVPMatrix
     }
 

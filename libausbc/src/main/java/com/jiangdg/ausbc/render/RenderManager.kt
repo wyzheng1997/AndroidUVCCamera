@@ -155,6 +155,11 @@ class RenderManager(
                     mCameraRender?.setRotateAngle(this)
                 }
             }
+            MSG_GL_MIRROR -> {
+                (msg.obj as? Boolean)?.apply {
+                    mCameraRender?.setMirror(this)
+                }
+            }
             MSG_GL_DRAW -> {
                 //Render camera data to SurfaceTexture
                 //Set the correction matrix of the image at the same time
@@ -336,6 +341,11 @@ class RenderManager(
      */
     fun setRotateType(type: RotateType?) {
         mRenderHandler?.obtainMessage(MSG_GL_ROUTE_ANGLE, type)?.sendToTarget()
+    }
+
+    // 设置镜像
+    fun setMirror(enable: Boolean?) {
+        mRenderHandler?.obtainMessage(MSG_GL_MIRROR, enable)?.sendToTarget()
     }
 
     /**
@@ -533,6 +543,7 @@ class RenderManager(
         private const val MSG_GL_REMOVE_EFFECT = 0x07
         private const val MSG_GL_SAVE_IMAGE = 0x08
         private const val MSG_GL_ROUTE_ANGLE = 0x09
+        private const val MSG_GL_MIRROR = 0x10
 
         // codec
         private const val MSG_GL_RENDER_CODEC_INIT = 0x11

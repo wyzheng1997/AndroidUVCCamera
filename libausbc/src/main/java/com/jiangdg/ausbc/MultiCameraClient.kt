@@ -670,19 +670,7 @@ class MultiCameraClient(ctx: Context, callback: IDeviceConnectCallBack?) {
                 return
             }
 
-            if(isMirror) {
-                mRenderManager?.setRotateType(RotateType.FLIP_LEFT_RIGHT)
-            }else{
-                mCameraRequest?.apply {
-                    closeCamera()
-                    mMainHandler.postDelayed({
-                        previewWidth = mCameraRequest!!.previewWidth
-                        previewHeight = mCameraRequest!!.previewHeight
-                        defaultRotateType = mCameraRequest!!.defaultRotateType
-                        openCamera(mCameraView, mCameraRequest)
-                    }, 1000)
-                }
-            }
+            mRenderManager?.setMirror(isMirror)
         }
 
         /**
