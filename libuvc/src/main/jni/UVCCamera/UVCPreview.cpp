@@ -86,7 +86,7 @@ UVCPreview::UVCPreview(uvc_device_handle_t *devh)
 }
 
 UVCPreview::~UVCPreview() {
-
+	stopPreview();
 	ENTER();
 	if (mPreviewWindow)
 		ANativeWindow_release(mPreviewWindow);
@@ -370,12 +370,14 @@ int UVCPreview::stopPreview() {
         // because of capture_thread may null when called do_preview()
 		if (mHasCapturing) {
             pthread_cond_signal(&capture_sync);
-            if (capture_thread && pthread_join(capture_thread, NULL) != EXIT_SUCCESS) {
-                LOGW("UVCPreview::terminate capture thread: pthread_join failed");
-            }
+			if (capture_thread) {
+				pthread_join(capture_thread, NULL);
+				capture_thread = 0;       // 线程ID清空
+			}
 		}
-		if (preview_thread && pthread_join(preview_thread, NULL) != EXIT_SUCCESS) {
-			LOGW("UVCPreview::terminate preview thread: pthread_join failed");
+		if (preview_thread) {
+			pthread_join(preview_thread, NULL);
+			preview_thread = 0;           // 线程ID清空
 		}
 		clearDisplay();
 	}
@@ -383,20 +385,21 @@ int UVCPreview::stopPreview() {
 	clearPreviewFrame();
 	clearCaptureFrame();
 	// check preview mutex available
-	if (pthread_mutex_lock(&preview_mutex) == 0) {
+	if (pthread_mutex_trylock(&preview_mutex) == 0) {
 		if (mPreviewWindow) {
 			ANativeWindow_release(mPreviewWindow);
 			mPreviewWindow = NULL;
 		}
 		pthread_mutex_unlock(&preview_mutex);
 	}
-	if (pthread_mutex_lock(&capture_mutex) == 0) {
+	if (pthread_mutex_trylock(&capture_mutex) == 0) {
 		if (mCaptureWindow) {
 			ANativeWindow_release(mCaptureWindow);
 			mCaptureWindow = NULL;
 		}
 		pthread_mutex_unlock(&capture_mutex);
 	}
+
 	RETURN(0, int);
 }
 
