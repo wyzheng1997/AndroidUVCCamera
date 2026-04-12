@@ -86,26 +86,28 @@ UVCPreview::UVCPreview(uvc_device_handle_t *devh)
 }
 
 UVCPreview::~UVCPreview() {
-	stopPreview();
 	ENTER();
-	if (mPreviewWindow)
-		ANativeWindow_release(mPreviewWindow);
+
+	// 【强制】先停止，保证线程全部死亡
+	stopPreview();
+
+	// 现在才能安全释放资源
+	if (mPreviewWindow) ANativeWindow_release(mPreviewWindow);
 	mPreviewWindow = NULL;
-	if (mCaptureWindow)
-		ANativeWindow_release(mCaptureWindow);
+	if (mCaptureWindow) ANativeWindow_release(mCaptureWindow);
 	mCaptureWindow = NULL;
+
 	clearPreviewFrame();
 	clearCaptureFrame();
 	clear_pool();
-	pthread_mutex_lock(&preview_mutex);
+
+	// 线程已死 → 销毁锁绝对安全
 	pthread_mutex_destroy(&preview_mutex);
 	pthread_cond_destroy(&preview_sync);
-	pthread_mutex_lock(&capture_mutex);
 	pthread_mutex_destroy(&capture_mutex);
 	pthread_cond_destroy(&capture_sync);
-	// 释放 capture_clock_aatr
-    // pthread_condattr_destroy(&capture_clock_attr);
 	pthread_mutex_destroy(&pool_mutex);
+
 	EXIT();
 }
 
@@ -178,7 +180,7 @@ inline const bool UVCPreview::isRunning() const {return mIsRunning; }
 
 int UVCPreview::setPreviewSize(int width, int height, int min_fps, int max_fps, int mode, float bandwidth) {
 	ENTER();
-	
+
 	int result = 0;
 	if ((requestWidth != width) || (requestHeight != height) || (requestMode != mode)) {
 		requestWidth = width;
@@ -193,7 +195,7 @@ int UVCPreview::setPreviewSize(int width, int height, int min_fps, int max_fps, 
 			!requestMode ? UVC_FRAME_FORMAT_YUYV : UVC_FRAME_FORMAT_MJPEG,
 			requestWidth, requestHeight, requestMinFps, requestMaxFps);
 	}
-	
+
 	RETURN(result, int);
 }
 
@@ -216,7 +218,7 @@ int UVCPreview::setPreviewDisplay(ANativeWindow *preview_window) {
 }
 
 int UVCPreview::setFrameCallback(JNIEnv *env, jobject frame_callback_obj, int pixel_format) {
-	
+
 	ENTER();
 	pthread_mutex_lock(&capture_mutex);
 	{
@@ -365,26 +367,30 @@ int UVCPreview::stopPreview() {
 	bool b = isRunning();
 	if (LIKELY(b)) {
 		mIsRunning = false;
-        pthread_cond_signal(&preview_sync);
-        // jiangdg:fix stopview crash
-        // because of capture_thread may null when called do_preview()
-		if (mHasCapturing) {
-            pthread_cond_signal(&capture_sync);
-			if (capture_thread) {
-				pthread_join(capture_thread, NULL);
-				capture_thread = 0;       // 线程ID清空
-			}
+
+		// 唤醒所有等待，让线程退出循环
+		pthread_cond_broadcast(&preview_sync);
+		pthread_cond_broadcast(&capture_sync);
+
+		// 【必须】等待捕获线程完全退出
+		if (mHasCapturing && capture_thread) {
+			pthread_join(capture_thread, NULL);
+			capture_thread = 0;
 		}
+		// 【必须】等待预览线程完全退出
 		if (preview_thread) {
 			pthread_join(preview_thread, NULL);
-			preview_thread = 0;           // 线程ID清空
+			preview_thread = 0;
 		}
+
 		clearDisplay();
 	}
+
 	mHasCapturing = false;
 	clearPreviewFrame();
 	clearCaptureFrame();
-	// check preview mutex available
+
+	// 【绝对安全】trylock 不会崩溃
 	if (pthread_mutex_trylock(&preview_mutex) == 0) {
 		if (mPreviewWindow) {
 			ANativeWindow_release(mPreviewWindow);
@@ -453,7 +459,9 @@ void UVCPreview::addPreviewFrame(uvc_frame_t *frame) {
 
 uvc_frame_t *UVCPreview::waitPreviewFrame() {
 	uvc_frame_t *frame = NULL;
-	pthread_mutex_lock(&preview_mutex);
+	if (pthread_mutex_trylock(&preview_mutex) != 0) {
+		return NULL; // 锁不可用 → 直接跳过，不崩溃
+	}
 	{
 		if (!previewFrames.size()) {
 			pthread_cond_wait(&preview_sync, &preview_mutex);
@@ -653,6 +661,9 @@ uvc_frame_t *UVCPreview::draw_preview_one(uvc_frame_t *frame, ANativeWindow **wi
 
 	int b = 0;
 	pthread_mutex_lock(&preview_mutex);
+	if (pthread_mutex_trylock(&preview_mutex) != 0) {
+		return NULL;
+	}
 	{
 		b = *window != NULL;
 	}
@@ -743,7 +754,9 @@ void UVCPreview::addCaptureFrame(uvc_frame_t *frame) {
  */
 uvc_frame_t *UVCPreview::waitCaptureFrame() {
 	uvc_frame_t *frame = NULL;
-	pthread_mutex_lock(&capture_mutex);
+	if (pthread_mutex_trylock(&capture_mutex) != 0) {
+		return NULL;
+	}
 	{
 		if (!captureQueu) {
 			 //  这里有阻塞的情况，替换成 pthread_cond_timedwait 方法，设置相对的超时时间为 1s
@@ -836,11 +849,11 @@ void UVCPreview::do_capture(JNIEnv *env) {
 
 void UVCPreview::do_capture_idle_loop(JNIEnv *env) {
 	ENTER();
-	
+
 	for (; isRunning() && isCapturing() ;) {
 		do_capture_callback(env, waitCaptureFrame());
 	}
-	
+
 	EXIT();
 }
 
