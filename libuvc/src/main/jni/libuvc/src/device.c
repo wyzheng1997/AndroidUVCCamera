@@ -1574,7 +1574,7 @@ void uvc_close(uvc_device_handle_t *devh) {
 	if (ctx->own_usb_ctx && ctx->open_devices == devh && devh->next == NULL) {
 		ctx->kill_handler_thread = 1;
 		/* Give the handler thread time to see the flag before destroying resources */
-		usleep(150000); // 150ms delay to reduce race condition window
+		usleep(300000); // 300ms delay to reduce race condition window
 		libusb_close(devh->usb_devh);
 		pthread_join(ctx->handler_thread, NULL);
 	} else {

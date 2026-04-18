@@ -328,18 +328,24 @@ class AACEncodeProcessor(strategy: IAudioStrategy? = null) : AbstractProcessor(f
         val sampleRate = mAudioRecord.getSampleRate()
         val audioFormat = mAudioRecord.getAudioFormat()
         val channelCount = mAudioRecord.getChannelCount()
-        val channelConfig = mAudioRecord.getChannelConfig()
+
+        val channelOutConfig = if (channelCount == 1) {
+            AudioFormat.CHANNEL_OUT_MONO  // 播放单声道
+        } else {
+            AudioFormat.CHANNEL_OUT_STEREO // 播放立体声
+        }
+
         Logger.i(TAG, "initAudioTrack: sample=$sampleRate,format=$audioFormat,count=$channelCount")
         Process.setThreadPriority(Process.THREAD_PRIORITY_URGENT_AUDIO)
         val minBufferSize = AudioTrack.getMinBufferSize(
             sampleRate,
-            channelConfig,
+            channelOutConfig,
             audioFormat
         )
         mAudioTrack = AudioTrack(
             AudioManager.STREAM_MUSIC,
             sampleRate,
-            channelConfig,
+            channelOutConfig,
             audioFormat,
             minBufferSize,
             AUDIO_TRACK_MODE
