@@ -594,7 +594,7 @@ class Camera2Strategy(ctx: Context) : ICameraStrategy(ctx) {
                     }
                 }
                 val date = mDateFormat.format(System.currentTimeMillis())
-                val title = savePath ?: "IMG_JJCamera_$date"
+                val title = savePath ?: "IMG_Camera_$date"
                 val displayName = savePath ?: "$title.jpg"
                 val path = savePath ?: "$mCameraDir/$displayName"
 //                val orientation = captureResult[CaptureResult.JPEG_ORIENTATION]

@@ -83,7 +83,7 @@ class Mp4Muxer(
         try {
             if (path.isNullOrEmpty()) {
                 val date = mDateFormat.format(System.currentTimeMillis())
-                path = "$mCameraDir/VID_JJCamera_$date"
+                path = "$mCameraDir/VID_Camera_$date"
             }
             mOriginalPath = path
             path = "${path}.mp4"
