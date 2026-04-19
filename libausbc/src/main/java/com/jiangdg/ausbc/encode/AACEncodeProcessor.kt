@@ -71,7 +71,7 @@ class AACEncodeProcessor(strategy: IAudioStrategy? = null) : AbstractProcessor(f
         // 需要等待音频采集初始化完成
         mCountDownLatch = CountDownLatch(1)
         initAudioRecord()
-        if (mCountDownLatch?.await(3, TimeUnit.SECONDS) == false) {
+        if (mCountDownLatch?.await(5, TimeUnit.SECONDS) == false) {
             return
         }
         try {
@@ -144,7 +144,7 @@ class AACEncodeProcessor(strategy: IAudioStrategy? = null) : AbstractProcessor(f
             try {
                 mCountDownLatch = CountDownLatch(1)
                 initAudioRecord()
-                if (mCountDownLatch?.await(3, TimeUnit.SECONDS) == false) {
+                if (mCountDownLatch?.await(5, TimeUnit.SECONDS) == false) {
                     callBack?.onError("times out, init audio failed")
                     return@submit
                 }
@@ -207,7 +207,7 @@ class AACEncodeProcessor(strategy: IAudioStrategy? = null) : AbstractProcessor(f
                 }
                 mCountDownLatch = CountDownLatch(1)
                 initAudioRecord()
-                if (mCountDownLatch?.await(3, TimeUnit.SECONDS) == false) {
+                if (mCountDownLatch?.await(5, TimeUnit.SECONDS) == false) {
                     callBack.onError("times out, init audio failed")
                     return@submit
                 }
