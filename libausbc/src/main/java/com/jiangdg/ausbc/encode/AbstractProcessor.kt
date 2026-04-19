@@ -43,6 +43,7 @@ abstract class AbstractProcessor(private val isVideo: Boolean) {
     private var mEncodeDataCb: IEncodeDataCallBack? = null
     protected val mRawDataQueue: ConcurrentLinkedQueue<RawData> = ConcurrentLinkedQueue()
     protected var mBitRate: Int? = null
+
     private var isExit = true
     protected val mMainHandler: Handler by lazy {
         Handler(Looper.getMainLooper())
@@ -236,19 +237,31 @@ abstract class AbstractProcessor(private val isVideo: Boolean) {
         }
     }
 
+    private val frameSamples = 1024
+    private val bytesPerSample = 2 // PCM 16bit
+    private val frameSize = frameSamples * 2 * bytesPerSample
+
+    private val cacheBuffer = ByteArray(frameSize * 10)
+    private var cacheSize = 0
+
+    private var totalSamples = 0L
     private fun queueFrameIfNeed() {
-        mMediaCodec?.let { codec ->
+
+        val codec = mMediaCodec ?: return
+
+        if(isVideo) {
             if (mRawDataQueue.isEmpty()) {
-                return@let
+                return
             }
-            val rawData = mRawDataQueue.poll() ?: return@let
+            val rawData = mRawDataQueue.poll() ?: return
             val data: ByteArray = rawData.data
             if (processInputData(data) == null) {
-                return@let
+                return
             }
+
             val inputIndex = codec.dequeueInputBuffer(TIMES_OUT_US)
             if (inputIndex < 0) {
-                return@let
+                return
             }
             val inputBuffer = if (isLowerLollipop()) {
                 codec.inputBuffers[inputIndex]
@@ -257,7 +270,54 @@ abstract class AbstractProcessor(private val isVideo: Boolean) {
             }
             inputBuffer?.clear()
             inputBuffer?.put(data)
+
             codec.queueInputBuffer(inputIndex, 0, data.size, getPTSUs(data.size), 0)
+        }else{
+            // 先把 rawData 塞进缓存
+            while (mRawDataQueue.isNotEmpty()) {
+                val rawData = mRawDataQueue.poll() ?: break
+                val data = rawData.data
+
+                System.arraycopy(data, 0, cacheBuffer, cacheSize, data.size)
+                cacheSize += data.size
+            }
+
+            // 拼帧
+            while (cacheSize >= frameSize) {
+                val inputIndex = codec.dequeueInputBuffer(TIMES_OUT_US)
+                if (inputIndex < 0) return
+
+                val inputBuffer = if (isLowerLollipop()) {
+                    codec.inputBuffers[inputIndex]
+                } else {
+                    codec.getInputBuffer(inputIndex)
+                } ?: return
+
+                inputBuffer.clear()
+                inputBuffer.put(cacheBuffer, 0, frameSize)
+
+                // 正确PTS：按 sample 算
+                val pts = totalSamples * 1_000_000L / 48000
+                totalSamples += frameSamples
+
+                codec.queueInputBuffer(
+                    inputIndex,
+                    0,
+                    frameSize,
+                    pts,
+                    0
+                )
+
+                // 移动剩余数据
+                System.arraycopy(
+                    cacheBuffer,
+                    frameSize,
+                    cacheBuffer,
+                    0,
+                    cacheSize - frameSize
+                )
+                cacheSize -= frameSize
+            }
         }
     }
 
@@ -274,7 +334,7 @@ abstract class AbstractProcessor(private val isVideo: Boolean) {
         private const val MSG_STOP = 2
         private const val TIMES_OUT_US = 10000L
 
-        const val MAX_QUEUE_SIZE = 5
+        const val MAX_QUEUE_SIZE = 20
     }
 
 }

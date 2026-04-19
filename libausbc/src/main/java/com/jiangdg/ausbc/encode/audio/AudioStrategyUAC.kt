@@ -102,8 +102,8 @@ class AudioStrategyUAC(private val ctrlBlock: USBMonitor.UsbControlBlock): IAudi
 
     companion object {
         private const val TAG = "AudioUac"
-        private const val MAX_QUEUE_SIZE = 10
-        private const val SAMPLE_RATE = 8000
+        private const val MAX_QUEUE_SIZE = 100
+        private const val SAMPLE_RATE = 48000
         private const val BIT_RESOLUTION = 8
         private const val CHANNEL_COUNT = 1
     }

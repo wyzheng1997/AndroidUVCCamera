@@ -40,7 +40,7 @@ import kotlin.Exception
  */
 class AACEncodeProcessor(strategy: IAudioStrategy? = null) : AbstractProcessor(false) {
     private var mAudioTrack: AudioTrack? = null
-    private var mPresentationTimeUs: Long = 0L
+    private var mStartTimeUs: Long = 0L
     private var mCountDownLatch: CountDownLatch? = null
     private val mPlayQueue: ConcurrentLinkedQueue<RawData> by lazy {
         ConcurrentLinkedQueue()
@@ -67,7 +67,13 @@ class AACEncodeProcessor(strategy: IAudioStrategy? = null) : AbstractProcessor(f
     override fun getThreadName(): String = TAG
 
     override fun handleStartEncode() {
+        mStartTimeUs = 0L
+        // 需要等待音频采集初始化完成
+        mCountDownLatch = CountDownLatch(1)
         initAudioRecord()
+        if (mCountDownLatch?.await(3, TimeUnit.SECONDS) == false) {
+            return
+        }
         try {
             val sampleRate = mAudioRecord.getSampleRate()
             val channelCount = mAudioRecord.getChannelCount()
@@ -111,21 +117,10 @@ class AACEncodeProcessor(strategy: IAudioStrategy? = null) : AbstractProcessor(f
     }
 
     override fun getPTSUs(bufferSize: Int): Long {
-        //A frame of audio frame size int size = sampling rate * bit width * sampling time * number of channels
-        // 1s timestamp calculation formula presentationTimeUs = 1000000L * (totalBytes / sampleRate/ audioFormat / channelCount / 8 )
-        //totalBytes : total size of incoming encoder
-        //1000 000L : The unit is microseconds, after conversion = 1s,
-        //Divided by 8: The original unit of pcm is bit, 1 byte = 8 bit, 1 short = 16 bit, and it needs to be converted if it is carried by Byte[] and Short[]
-        val sampleRate = mAudioRecord.getSampleRate()
-        val channelCount = mAudioRecord.getChannelCount()
-        val format = mAudioRecord.getAudioFormat()
-        val formatBit = if (format == AudioFormat.ENCODING_PCM_16BIT) {
-            18
-        } else {
-            8
+        if (mStartTimeUs == 0L) {
+            mStartTimeUs = System.nanoTime() / 1000
         }
-        mPresentationTimeUs += (1.0 * bufferSize / (sampleRate * channelCount * (formatBit / 8)) * 1000000.0).toLong()
-        return mPresentationTimeUs
+        return System.nanoTime() / 1000 - mStartTimeUs
     }
 
     override fun processOutputData(
@@ -180,7 +175,7 @@ class AACEncodeProcessor(strategy: IAudioStrategy? = null) : AbstractProcessor(f
                 }
             } catch (e: Exception) {
                 mMainHandler.post {
-                    callBack?.onError(e.localizedMessage?: "unknown exception")
+                    callBack?.onError(e.localizedMessage ?: "unknown exception")
                 }
                 Logger.e(TAG, "start/stop play mic failed, err = ${e.localizedMessage}", e)
             }
@@ -225,7 +220,10 @@ class AACEncodeProcessor(strategy: IAudioStrategy? = null) : AbstractProcessor(f
                 val sampleRate = mAudioRecord.getSampleRate()
                 val channelCount = mAudioRecord.getChannelCount()
                 if (Utils.debugCamera) {
-                    Logger.i(TAG, "start record mp3 success, $sampleRate, $channelCount, $audioPath")
+                    Logger.i(
+                        TAG,
+                        "start record mp3 success, $sampleRate, $channelCount, $audioPath"
+                    )
                 }
                 LameMp3.lameInit(sampleRate, channelCount, sampleRate, BIT_RATE, DEGREE_RECORD_MP3)
                 mMainHandler.post {
@@ -248,7 +246,7 @@ class AACEncodeProcessor(strategy: IAudioStrategy? = null) : AbstractProcessor(f
                 }
             } catch (e: Exception) {
                 mMainHandler.post {
-                    callBack.onError(e.localizedMessage?: "unknown exception")
+                    callBack.onError(e.localizedMessage ?: "unknown exception")
                 }
                 Logger.e(TAG, "start/stop record mp3 failed, err = ${e.localizedMessage}", e)
             } finally {
@@ -265,7 +263,7 @@ class AACEncodeProcessor(strategy: IAudioStrategy? = null) : AbstractProcessor(f
                     }
                 } catch (e: Exception) {
                     mMainHandler.post {
-                        callBack.onError(e.localizedMessage?: "unknown exception")
+                        callBack.onError(e.localizedMessage ?: "unknown exception")
                     }
                     Logger.e(TAG, "stop record mp3 failed, err = ${e.localizedMessage}", e)
                 }
@@ -281,15 +279,21 @@ class AACEncodeProcessor(strategy: IAudioStrategy? = null) : AbstractProcessor(f
     }
 
     private fun initAudioRecord() {
-        if (mAudioRecordState.get()) return
+        if (mAudioRecordState.get()){
+            mCountDownLatch?.countDown()
+            return
+        }
         mAudioThreadPool.submit {
             mAudioRecord.initAudioRecord()
             mAudioRecord.startRecording()
             mAudioRecordState.set(true)
             mCountDownLatch?.countDown()
+
+
             while (mAudioRecordState.get()) {
                 val data = mAudioRecord.read()
                 data ?: continue
+
                 // pcm encode queue
                 putRawData(data)
                 // pcm play queue
@@ -375,9 +379,8 @@ class AACEncodeProcessor(strategy: IAudioStrategy? = null) : AbstractProcessor(f
     companion object {
         private const val TAG = "AACEncodeProcessor"
         private const val MIME_TYPE = "audio/mp4a-latm"
-        const val BIT_RATE = 32 * 1024
+        const val BIT_RATE = 96000
         private const val MAX_INPUT_SIZE = 48000
-        const val CHANNEL_OUT_CONFIG = AudioFormat.CHANNEL_OUT_MONO
         private const val AUDIO_TRACK_MODE = AudioTrack.MODE_STREAM
         private const val CODEC_AAC_PROFILE = MediaCodecInfo.CodecProfileLevel.AACObjectLC
         private const val DEGREE_RECORD_MP3 = 7

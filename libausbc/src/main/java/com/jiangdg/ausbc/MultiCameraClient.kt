@@ -1,7 +1,6 @@
 package com.jiangdg.ausbc
 
 import android.content.Context
-import android.content.res.Configuration
 import android.graphics.SurfaceTexture
 import android.hardware.usb.UsbDevice
 import android.os.*
@@ -528,7 +527,7 @@ class MultiCameraClient(ctx: Context, callback: IDeviceConnectCallBack?) {
             releaseEncodeProcessor()
             // create audio process
             getAudioStrategy()?.let { audio ->
-                AACEncodeProcessor(audio)
+                AACEncodeProcessor(audio,)
             }?.also { processor ->
                 mAudioProcess = processor
             }
@@ -617,7 +616,6 @@ class MultiCameraClient(ctx: Context, callback: IDeviceConnectCallBack?) {
                 callBack?.onError("Has no audio permission")
                 return
             }
-            stopPlayMic() // 先停止，防止多次调用产生回音
             (mAudioProcess as? AACEncodeProcessor)?.playAudioStart(callBack)
         }
 

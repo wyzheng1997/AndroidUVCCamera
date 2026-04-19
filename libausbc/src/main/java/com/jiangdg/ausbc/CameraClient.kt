@@ -534,7 +534,7 @@ class CameraClient internal constructor(builder: Builder) : IPreviewDataCallBack
         } else {
             mRequest!!.previewHeight
         }
-        mAudioProcess = AACEncodeProcessor(AudioStrategySystem())
+        mAudioProcess = AACEncodeProcessor(AudioStrategySystem(),)
         mVideoProcess = H264EncodeProcessor(encodeWidth, encodeHeight, isEnableGLEs)
     }
 

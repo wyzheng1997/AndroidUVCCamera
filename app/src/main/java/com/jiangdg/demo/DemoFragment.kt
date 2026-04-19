@@ -427,6 +427,7 @@ class DemoFragment : CameraFragment(), View.OnClickListener, CaptureMediaView.On
             }
 
         })
+
     }
 
     private fun captureImage() {

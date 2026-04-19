@@ -148,6 +148,7 @@ class Mp4Muxer(
         }
     }
 
+
     /**
      * write audio(aac) or video(h264) data to media muxer
      *
@@ -164,6 +165,7 @@ class Mp4Muxer(
             if (bufferInfo.size <= 0) {
                 return
             }
+
             val index = if (isVideo) {
                 if (mVideoPts == 0L) {
                     mVideoPts = bufferInfo.presentationTimeUs
