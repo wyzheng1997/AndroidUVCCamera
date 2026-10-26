@@ -258,6 +258,7 @@ struct uvc_stream_handle {
 
   /** if true, stream is running (streaming video to host) */
   uint8_t running;
+  uint32_t xfer_err_cnt;	// [black-screen-fix] consecutive bulk transfer error count
   /** Current control block */
   struct uvc_stream_ctrl cur_ctrl;
 

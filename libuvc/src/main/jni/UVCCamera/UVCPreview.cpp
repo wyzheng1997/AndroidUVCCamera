@@ -49,6 +49,11 @@
 struct timespec ts;
 struct timeval tv;
 
+// [black-screen-diag] 无条件输出的诊断日志，不受LOG_NDEBUG/LOCAL_DEBUG影响
+// 过滤方式: adb logcat -s UVCDBG
+#define UVCDBG(FMT, ...) \
+	__android_log_print(ANDROID_LOG_ERROR, "UVCDBG", "[%s:%d]" FMT, __FUNCTION__, __LINE__, ##__VA_ARGS__)
+
 UVCPreview::UVCPreview(uvc_device_handle_t *devh)
 :	mPreviewWindow(NULL),
 	mCaptureWindow(NULL),
@@ -409,10 +414,31 @@ int UVCPreview::stopPreview() {
 //**********************************************************************
 void UVCPreview::uvc_preview_frame_callback(uvc_frame_t *frame, void *vptr_args) {
 	UVCPreview *preview = reinterpret_cast<UVCPreview *>(vptr_args);
-	if UNLIKELY(!preview->isRunning() || !frame || !frame->frame_format || !frame->data || !frame->data_bytes) return;
+	// [black-screen-diag] 统计libuvc送来的帧与被判为broken frame的数量(1秒最多打一条)
+	static uint32_t s_cb_cnt = 0, s_drop_cnt = 0;
+	static struct timespec s_last_ts = {0, 0};
+	struct timespec now_ts;
+	clock_gettime(CLOCK_MONOTONIC, &now_ts);
+	s_cb_cnt++;
+	if (s_cb_cnt == 1 || (now_ts.tv_sec - s_last_ts.tv_sec) >= 1) {
+		s_last_ts = now_ts;
+		UVCDBG("libuvc cb=%u broken_dropped=%u running=%d fmt=%d bytes=%u wh=%dx%d expect=%dx%d frameBytes=%u ptr=%p",
+			s_cb_cnt, s_drop_cnt, (int)preview->isRunning(),
+			frame ? (int)frame->frame_format : -1,
+			frame ? (unsigned)frame->actual_bytes : 0u,
+			frame ? frame->width : 0, frame ? frame->height : 0,
+			preview->frameWidth, preview->frameHeight, (unsigned)preview->frameBytes,
+			frame ? frame->data : NULL);
+	}
+	if UNLIKELY(!preview->isRunning() || !frame || !frame->frame_format || !frame->data || !frame->data_bytes) {
+		UVCDBG("frame cb skipped: running=%d frame=%p", preview->isRunning(), frame);
+		return;
+	}
 	if (UNLIKELY(
 		((frame->frame_format != UVC_FRAME_FORMAT_MJPEG) && (frame->actual_bytes < preview->frameBytes))
 		|| (frame->width != preview->frameWidth) || (frame->height != preview->frameHeight) )) {
+
+		s_drop_cnt++;
 
 #if LOCAL_DEBUG
 		LOGD("broken frame!:format=%d,actual_bytes=%d/%d(%d,%d/%d,%d)",
@@ -440,11 +466,15 @@ void UVCPreview::uvc_preview_frame_callback(uvc_frame_t *frame, void *vptr_args)
 
 void UVCPreview::addPreviewFrame(uvc_frame_t *frame) {
 
+	// [black-screen-diag] 队列满说明消费端(解码/上屏线程)卡住或过慢
+	static uint32_t s_queue_full_cnt = 0;
 	pthread_mutex_lock(&preview_mutex);
 	if (isRunning() && (previewFrames.size() < MAX_FRAME)) {
 		previewFrames.put(frame);
 		frame = NULL;
 		pthread_cond_signal(&preview_sync);
+	} else {
+		UVCDBG("preview queue full(size=%d running=%d) drop=%u", (int)previewFrames.size(), (int)isRunning(), s_queue_full_cnt++);
 	}
 	pthread_mutex_unlock(&preview_mutex);
 	if (frame) {
@@ -540,6 +570,9 @@ void UVCPreview::do_preview(uvc_stream_ctrl_t *ctrl) {
     // jiangdg:fix stopview crash
     // use mHasCapturing flag confirm capture_thread was be created
     mHasCapturing = false;
+	// [black-screen-diag] uvc_start_streaming_bandwidth结果与显示窗口状态
+	UVCDBG("do_preview: start_streaming ret=%d frameMode=%d w=%d h=%d previewWindow=%p bandwidth=%f",
+		result, frameMode, frameWidth, frameHeight, mPreviewWindow, requestBandwidth);
 	if (LIKELY(!result)) {
 		clearPreviewFrame();
 		if (pthread_create(&capture_thread, NULL, capture_thread_func, (void *)this) == 0) {
@@ -551,12 +584,31 @@ void UVCPreview::do_preview(uvc_stream_ctrl_t *ctrl) {
 #endif
 		if (frameMode) {
 			// MJPEG mode
+			// [black-screen-diag] 解码结果统计(1秒最多打一条)
+			static uint32_t s_dec_cnt = 0, s_dec_fail = 0;
+			static struct timespec s_dec_last = {0, 0};
 			for ( ; LIKELY(isRunning()) ; ) {
 				frame_mjpeg = waitPreviewFrame();
 				if (LIKELY(frame_mjpeg)) {
+					const int dbg_w = frame_mjpeg->width, dbg_h = frame_mjpeg->height;
+					const unsigned dbg_bytes = (unsigned)frame_mjpeg->actual_bytes;
 					frame = get_frame(frame_mjpeg->width * frame_mjpeg->height * 2);
 					result = uvc_mjpeg2yuyv(frame_mjpeg, frame);   // MJPEG => yuyv
 					recycle_frame(frame_mjpeg);
+					struct timespec now_ts;
+					clock_gettime(CLOCK_MONOTONIC, &now_ts);
+					s_dec_cnt++;
+					if (result) {
+						s_dec_fail++;
+						if (s_dec_fail == 1 || (now_ts.tv_sec - s_dec_last.tv_sec) >= 1) {
+							s_dec_last = now_ts;
+							UVCDBG("mjpeg2yuyv failed err=%d frame=%dx%d bytes=%u total=%u fail=%u",
+								result, dbg_w, dbg_h, dbg_bytes, s_dec_cnt, s_dec_fail);
+						}
+					} else if (s_dec_cnt == 1 || (now_ts.tv_sec - s_dec_last.tv_sec) >= 1) {
+						s_dec_last = now_ts;
+						UVCDBG("decoded ok total=%u fail=%u previewWindow=%p", s_dec_cnt, s_dec_fail, mPreviewWindow);
+					}
 					if (LIKELY(!result)) {
 						frame = draw_preview_one(frame, &mPreviewWindow, uvc_any2rgbx, 4);
 						addCaptureFrame(frame);

@@ -58,6 +58,11 @@
 #endif
 
 #include <assert.h>		// XXX add assert for debugging
+#include <android/log.h>	// [black-screen-diag]
+
+// [black-screen-diag] 无条件输出的诊断日志，不受LOG_NDEBUG影响。过滤: adb logcat -s UVCDBG
+#define UVCDIAG(FMT, ...) \
+	__android_log_print(ANDROID_LOG_ERROR, "UVCDBG", "[stream.c:%s:%d]" FMT, __FUNCTION__, __LINE__, ##__VA_ARGS__)
 
 #include "libuvc/libuvc.h"
 #include "libuvc/libuvc_internal.h"
@@ -605,7 +610,18 @@ uvc_error_t uvc_probe_stream_ctrl(uvc_device_handle_t *devh,
  */
 static void _uvc_swap_buffers(uvc_stream_handle_t *strmh) {
 	uint8_t *tmp_buf;
-
+	// [black-screen-diag] 完整帧产出统计(含EOF帧与FID翻转补发帧)
+	{
+		static uint32_t s_frame_out = 0;
+		static struct timespec s_out_last = {0, 0};
+		struct timespec now_ts;
+		clock_gettime(CLOCK_MONOTONIC, &now_ts);
+		if ((++s_frame_out == 1) || (now_ts.tv_sec - s_out_last.tv_sec) >= 1) {
+			s_out_last = now_ts;
+			UVCDIAG("complete frame swapped #%u got_bytes=%u bfh_err=0x%x",
+				s_frame_out, (unsigned)strmh->got_bytes, (unsigned)strmh->bfh_err);
+		}
+	}
 	pthread_mutex_lock(&strmh->cb_mutex);
 	{
 		/* swap the buffers */
@@ -626,7 +642,8 @@ static void _uvc_swap_buffers(uvc_stream_handle_t *strmh) {
 	strmh->got_bytes = 0;
 	strmh->last_scr = 0;
 	strmh->pts = 0;
-	strmh->bfh_err = 0;	// XXX
+	strmh->bfh_err = 0;
+	strmh->xfer_err_cnt = 0;	// [black-screen-fix] reset error streak on stream start	// XXX
 }
 
 static void _uvc_delete_transfer(struct libusb_transfer *transfer) {
@@ -780,6 +797,18 @@ static void _uvc_process_payload(uvc_stream_handle_t *strmh, const uint8_t *payl
 		if (header_info & UVC_STREAM_EOF/*(1 << 1)*/) {
 			// The EOF bit is set, so publish the complete frame
 			_uvc_swap_buffers(strmh);
+		}
+	}
+	// [black-screen-diag] 帧数据超出输出缓冲，整帧会被标错丢弃
+	if (UNLIKELY(strmh->bfh_err & UVC_STREAM_ERR)) {
+		static uint32_t s_buf_ovf = 0;
+		static struct timespec s_ovf_last = {0, 0};
+		struct timespec now_ts;
+		clock_gettime(CLOCK_MONOTONIC, &now_ts);
+		if ((++s_buf_ovf == 1) || (now_ts.tv_sec - s_ovf_last.tv_sec) >= 1) {
+			s_ovf_last = now_ts;
+			UVCDIAG("payload buffer overflow/err: got_bytes=%u size_buf=%u count=%u",
+				(unsigned)strmh->got_bytes, (unsigned)strmh->size_buf, s_buf_ovf);
 		}
 	}
 }
@@ -977,6 +1006,7 @@ static void _uvc_stream_callback(struct libusb_transfer *transfer) {
 #endif
 	switch (transfer->status) {
 	case LIBUSB_TRANSFER_COMPLETED:
+		strmh->xfer_err_cnt = 0;	// [black-screen-fix] healthy data resets error streak
 		if (!transfer->num_iso_packets) {
 			/* This is a bulk mode transfer, so it just has one payload transfer */
 			_uvc_process_payload(strmh, transfer->buffer, transfer->actual_length);
@@ -988,13 +1018,18 @@ static void _uvc_stream_callback(struct libusb_transfer *transfer) {
 	case LIBUSB_TRANSFER_NO_DEVICE:
 		strmh->running = 0;	// this needs for unexpected disconnect of cable otherwise hangup
 		// pass through to following lines
-	case LIBUSB_TRANSFER_CANCELLED:
-	case LIBUSB_TRANSFER_ERROR:
-		libusb_clear_halt(strmh->devh->usb_devh, strmh->stream_if->bEndpointAddress);
-		UVC_DEBUG("not retrying transfer, status = %d", transfer->status);
-//		MARK("not retrying transfer, status = %d", transfer->status);
-//		_uvc_delete_transfer(transfer);
+		case LIBUSB_TRANSFER_CANCELLED:
+		UVCDIAG("stream transfer cancelled: status=%d running=%d", transfer->status, strmh->running);
 		resubmit = 0;
+		break;
+	case LIBUSB_TRANSFER_ERROR:
+		// [black-screen-fix] 单次瞬时错误不再删除传输：clear_halt 后继续重提交，
+		// 避免整个传输池被瞬间清空导致黑屏；连续错误超过上限才放弃，防止空转。
+		UVCDIAG("bulk transfer ERROR: status=%d ep=0x%02x actual_len=%d running=%d seq=%d err_cnt=%u",
+			transfer->status, strmh->stream_if->bEndpointAddress, transfer->actual_length, strmh->running, strmh->seq, strmh->xfer_err_cnt);
+		libusb_clear_halt(strmh->devh->usb_devh, strmh->stream_if->bEndpointAddress);
+		resubmit = (strmh->running && (++strmh->xfer_err_cnt <= 50)) ? 1 : 0;
+		UVC_DEBUG("transfer error, resubmit=%d", resubmit);
 		break;
 	case LIBUSB_TRANSFER_TIMED_OUT:
 	case LIBUSB_TRANSFER_STALL:
@@ -1411,7 +1446,8 @@ uvc_error_t uvc_stream_start_bandwidth(uvc_stream_handle_t *strmh,
 	strmh->fid = 0;
 	strmh->pts = 0;
 	strmh->last_scr = 0;
-	strmh->bfh_err = 0;	// XXX
+	strmh->bfh_err = 0;
+	strmh->xfer_err_cnt = 0;	// [black-screen-fix] reset error streak on stream start	// XXX
 
 	frame_desc = uvc_find_frame_desc_stream(strmh, ctrl->bFormatIndex, ctrl->bFrameIndex);
 	if (UNLIKELY(!frame_desc)) {
